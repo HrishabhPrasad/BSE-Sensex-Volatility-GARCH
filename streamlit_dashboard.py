@@ -274,7 +274,15 @@ if model_fitted:
     
     with col1:
         st.write("**Model Parameters**")
-        st.write(results.summary().tables[1])
+        # Extract parameter names and values in a clean way
+        params_df = pd.DataFrame({
+            "Parameter": results.params.index,
+            "Value": results.params.values,
+            "Std Error": results.bse.values,
+            "T-Stat": results.tvalues.values,
+            "P-Value": results.pvalues.values
+        })
+        st.dataframe(params_df, hide_index=True, use_container_width=True)
     
     with col2:
         st.write("**Forecast**")
@@ -283,6 +291,18 @@ if model_fitted:
             "Forecasted Volatility (%)": forecast_volatility
         })
         st.dataframe(forecast_df, hide_index=True, use_container_width=True)
+    
+    # Additional model diagnostics
+    st.write("**Model Diagnostics**")
+    diag_df = pd.DataFrame({
+        "Metric": ["Log Likelihood", "AIC", "BIC"],
+        "Value": [
+            f"{results.loglikelihood:.2f}",
+            f"{results.aic:.2f}",
+            f"{results.bic:.2f}"
+        ]
+    })
+    st.dataframe(diag_df, hide_index=True, use_container_width=True)
 
 # --- FOOTER ---
 st.divider()
