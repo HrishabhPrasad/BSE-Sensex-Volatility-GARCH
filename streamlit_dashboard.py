@@ -224,7 +224,7 @@ if model_fitted:
         template='plotly_white'
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # --- RETURNS DISTRIBUTION ---
 st.subheader("📊 Daily Returns Distribution")
@@ -248,7 +248,7 @@ with col1:
         template='plotly_white'
     )
     
-    st.plotly_chart(fig_hist, use_container_width=True)
+    st.plotly_chart(fig_hist, width='stretch')
 
 with col2:
     # Statistics Box
@@ -264,7 +264,7 @@ with col2:
             f"{data_clean['returns'].kurtosis():.4f}"
         ]
     })
-    st.dataframe(stats_df, hide_index=True, use_container_width=True)
+    st.dataframe(stats_df, hide_index=True, width='stretch')
 
 # --- GARCH MODEL SUMMARY ---
 if model_fitted:
@@ -275,14 +275,15 @@ if model_fitted:
     with col1:
         st.write("**Model Parameters**")
         # Extract parameter names and values in a clean way
-        params_df = pd.DataFrame({
-            "Parameter": results.params.index,
-            "Value": results.params.values.round(6),
-            "Std Error": results.std_err.values.round(6),
-            "T-Stat": results.tvalues.values.round(4),
-            "P-Value": results.pvalues.values.round(4)
-        })
-        st.dataframe(params_df, hide_index=True, use_container_width=True)
+        params_data = {
+            "Parameter": list(results.params.index),
+            "Value": [f"{v:.6f}" for v in results.params.values],
+            "Std Error": [f"{v:.6f}" for v in results.std_err.values],
+            "T-Stat": [f"{v:.4f}" for v in results.tvalues.values],
+            "P-Value": [f"{v:.4f}" for v in results.pvalues.values]
+        }
+        params_df = pd.DataFrame(params_data)
+        st.dataframe(params_df, hide_index=True, width='stretch')
     
     with col2:
         st.write("**Forecast**")
@@ -290,7 +291,7 @@ if model_fitted:
             "Day": list(range(1, forecast_horizon + 1)),
             "Forecasted Volatility (%)": [f"{v:.4f}" for v in forecast_volatility]
         })
-        st.dataframe(forecast_df, hide_index=True, use_container_width=True)
+        st.dataframe(forecast_df, hide_index=True, width='stretch')
     
     # Additional model diagnostics
     st.write("**Model Diagnostics**")
@@ -303,7 +304,7 @@ if model_fitted:
             f"{len(data_clean)}"
         ]
     })
-    st.dataframe(diag_df, hide_index=True, use_container_width=True)
+    st.dataframe(diag_df, hide_index=True, width='stretch')
 
 # --- FOOTER ---
 st.divider()
