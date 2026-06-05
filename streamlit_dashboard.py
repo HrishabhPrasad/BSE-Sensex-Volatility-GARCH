@@ -104,8 +104,7 @@ try:
         ticker_symbol,
         start=start_date,
         end=end_date,
-        progress=False,
-        show_errors=False
+        progress=False
     )
     
     if len(data) == 0:
