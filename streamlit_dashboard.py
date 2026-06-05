@@ -277,10 +277,10 @@ if model_fitted:
         # Extract parameter names and values in a clean way
         params_df = pd.DataFrame({
             "Parameter": results.params.index,
-            "Value": results.params.values,
-            "Std Error": results.bse.values,
-            "T-Stat": results.tvalues.values,
-            "P-Value": results.pvalues.values
+            "Value": results.params.values.round(6),
+            "Std Error": results.std_err.values.round(6),
+            "T-Stat": results.tvalues.values.round(4),
+            "P-Value": results.pvalues.values.round(4)
         })
         st.dataframe(params_df, hide_index=True, use_container_width=True)
     
@@ -288,18 +288,19 @@ if model_fitted:
         st.write("**Forecast**")
         forecast_df = pd.DataFrame({
             "Day": list(range(1, forecast_horizon + 1)),
-            "Forecasted Volatility (%)": forecast_volatility
+            "Forecasted Volatility (%)": [f"{v:.4f}" for v in forecast_volatility]
         })
         st.dataframe(forecast_df, hide_index=True, use_container_width=True)
     
     # Additional model diagnostics
     st.write("**Model Diagnostics**")
     diag_df = pd.DataFrame({
-        "Metric": ["Log Likelihood", "AIC", "BIC"],
+        "Metric": ["Log Likelihood", "AIC", "BIC", "Observations"],
         "Value": [
             f"{results.loglikelihood:.2f}",
             f"{results.aic:.2f}",
-            f"{results.bic:.2f}"
+            f"{results.bic:.2f}",
+            f"{len(data_clean)}"
         ]
     })
     st.dataframe(diag_df, hide_index=True, use_container_width=True)
