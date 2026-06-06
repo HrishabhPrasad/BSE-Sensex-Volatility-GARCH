@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from arch import arch_model
 from datetime import datetime, timedelta
@@ -62,7 +61,6 @@ BSE_TOP_30 = {
 # --- SIDEBAR CONTROLS ---
 st.sidebar.header("⚙️ Configuration")
 
-# Stock Ticker Selection
 selected_stock_name = st.sidebar.selectbox(
     "Select Stock Ticker:",
     options=list(BSE_TOP_30.keys()),
@@ -70,123 +68,92 @@ selected_stock_name = st.sidebar.selectbox(
 )
 ticker_symbol = BSE_TOP_30[selected_stock_name]
 
-# Date Range Selection
 st.sidebar.subheader("📅 Date Range")
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    start_date = st.date_input(
-        "Start Date:",
-        value=datetime.now() - timedelta(days=365*3),
-        max_value=datetime.now()
-    )
-with col2:
-    end_date = st.date_input(
-        "End Date:",
-        value=datetime.now(),
-        max_value=datetime.now()
-    )
+start_date = st.sidebar.date_input(
+    "Start Date:",
+    value=datetime.now() - timedelta(days=365 * 3),
+    max_value=datetime.now()
+)
+end_date = st.sidebar.date_input(
+    "End Date:",
+    value=datetime.now(),
+    max_value=datetime.now()
+)
 
-# GARCH Parameters
 st.sidebar.subheader("📊 GARCH Model Parameters")
 garch_p = st.sidebar.slider("GARCH p (order):", min_value=1, max_value=3, value=1)
 garch_q = st.sidebar.slider("GARCH q (order):", min_value=1, max_value=3, value=1)
 forecast_horizon = st.sidebar.slider("Forecast Horizon (days):", min_value=1, max_value=30, value=5)
-
-# Rolling Window for Historical Volatility
 rolling_window = st.sidebar.slider("Rolling Window (days) for Historical Vol:", min_value=5, max_value=100, value=20)
 
-# --- DATA LOADING ---
-st.sidebar.info("⏳ Fetching data... Please wait.")
+# --- DATA LOADING (cached to avoid re-downloading on every slider change) ---
+@st.cache_data(ttl=3600)
+def load_data(ticker, start, end):
+    data = yf.download(ticker, start=start, end=end, progress=False)
+    if isinstance(data.columns, pd.MultiIndex):
+        data = data.xs(ticker, axis=1, level=1)
+    return data
+
+status = st.sidebar.empty()
+status.info("⏳ Fetching data...")
 
 try:
-    # Download data from Yahoo Finance
-    data = yf.download(
-        ticker_symbol,
-        start=start_date,
-        end=end_date,
-        progress=False
-    )
-    
+    data = load_data(ticker_symbol, start_date, end_date)
+
     if len(data) == 0:
         st.error(f"❌ No data available for {selected_stock_name}. Try a different stock or date range.")
         st.stop()
-    
-    # Ensure the dataframe has the required columns
-    if isinstance(data.index, pd.MultiIndex):
-        data = data[ticker_symbol]
-    
-    # Clean data
+
     data = data[['Close']].dropna()
     data.columns = ['close_price']
-    
-    st.sidebar.success(f"✅ Loaded {len(data)} trading days")
-    
+    status.success(f"✅ Loaded {len(data)} trading days")
+
 except Exception as e:
     st.error(f"❌ Error loading data: {str(e)}")
     st.stop()
 
 # --- DATA PROCESSING ---
-# Calculate daily returns
 data['returns'] = 100 * data['close_price'].pct_change()
 data = data.dropna()
 
-# Remove extreme outliers (data errors)
 data_clean = data[(data['returns'] < 20) & (data['returns'] > -20)].copy()
-
-# Calculate historical volatility (rolling standard deviation)
 data_clean['hist_volatility'] = data_clean['returns'].rolling(window=rolling_window).std()
 data_clean = data_clean.dropna()
 
 # --- GARCH MODEL FITTING ---
+model_fitted = False
 if len(data_clean) > 50:
     try:
         model = arch_model(data_clean['returns'], vol='Garch', p=garch_p, q=garch_q)
         results = model.fit(disp='off')
-        
-        # Get conditional volatility (model's estimate)
         data_clean['garch_volatility'] = results.conditional_volatility
-        
-        # Forecast future volatility
         forecast = results.forecast(horizon=forecast_horizon)
         forecast_volatility = np.sqrt(forecast.variance.iloc[-1, :].values)
-        
         model_fitted = True
     except Exception as e:
         st.warning(f"⚠️ Could not fit GARCH model: {str(e)}")
-        model_fitted = False
 else:
     st.warning("⚠️ Not enough data to fit GARCH model. Select a longer date range.")
-    model_fitted = False
 
-# --- MAIN DASHBOARD LAYOUT ---
-# Key Metrics Row
+# --- KEY METRICS ROW ---
 if model_fitted:
     col1, col2, col3, col4 = st.columns(4)
-    
+    current_return = data_clean['returns'].iloc[-1]
+    garch_vol = data_clean['garch_volatility'].iloc[-1]
+    var_95 = 1.645 * garch_vol
+
     with col1:
-        st.metric(
-            "Current Daily Return",
-            f"{data_clean['returns'].iloc[-1]:.3f}%"
-        )
-    
+        st.metric("Current Daily Return", f"{current_return:.3f}%")
     with col2:
-        st.metric(
-            "Historical Volatility",
-            f"{data_clean['hist_volatility'].iloc[-1]:.3f}%"
-        )
-    
+        st.metric("Historical Volatility", f"{data_clean['hist_volatility'].iloc[-1]:.3f}%")
     with col3:
-        st.metric(
-            "GARCH Volatility",
-            f"{data_clean['garch_volatility'].iloc[-1]:.3f}%"
-        )
-    
+        st.metric("GARCH Volatility", f"{garch_vol:.3f}%")
     with col4:
-        var_95 = 1.65 * data_clean['garch_volatility'].iloc[-1]
         st.metric(
-            "95% VaR",
+            "95% Value-at-Risk",
             f"{var_95:.3f}%",
-            delta=f"Downside Risk"
+            delta=f"-{var_95:.3f}% max expected loss",
+            delta_color="inverse"
         )
 
 # --- VOLATILITY COMPARISON CHART ---
@@ -194,8 +161,7 @@ st.subheader("📈 Volatility Comparison: Historical vs. GARCH Modeled")
 
 if model_fitted:
     fig = go.Figure()
-    
-    # Historical Volatility
+
     fig.add_trace(go.Scatter(
         x=data_clean.index,
         y=data_clean['hist_volatility'],
@@ -204,8 +170,7 @@ if model_fitted:
         line=dict(color='blue', width=2),
         hovertemplate='<b>Historical Vol</b><br>Date: %{x|%Y-%m-%d}<br>Volatility: %{y:.3f}%<extra></extra>'
     ))
-    
-    # GARCH Volatility
+
     fig.add_trace(go.Scatter(
         x=data_clean.index,
         y=data_clean['garch_volatility'],
@@ -214,17 +179,17 @@ if model_fitted:
         line=dict(color='red', width=2, dash='dash'),
         hovertemplate='<b>GARCH Vol</b><br>Date: %{x|%Y-%m-%d}<br>Volatility: %{y:.3f}%<extra></extra>'
     ))
-    
+
     fig.update_layout(
-        title=f"{selected_stock_name} - Volatility Analysis",
+        title=f"{selected_stock_name} — Volatility Analysis",
         xaxis_title="Date",
         yaxis_title="Volatility (%)",
         height=500,
         hovermode='x unified',
         template='plotly_white'
     )
-    
-    st.plotly_chart(fig, width='stretch')
+
+    st.plotly_chart(fig, use_container_width=True)
 
 # --- RETURNS DISTRIBUTION ---
 st.subheader("📊 Daily Returns Distribution")
@@ -239,7 +204,6 @@ with col1:
         name='Daily Returns',
         marker=dict(color='steelblue')
     ))
-    
     fig_hist.update_layout(
         title="Returns Distribution",
         xaxis_title="Daily Return (%)",
@@ -247,11 +211,9 @@ with col1:
         height=400,
         template='plotly_white'
     )
-    
-    st.plotly_chart(fig_hist, width='stretch')
+    st.plotly_chart(fig_hist, use_container_width=True)
 
 with col2:
-    # Statistics Box
     st.write("**Return Statistics**")
     stats_df = pd.DataFrame({
         "Metric": ["Mean", "Std Dev", "Min", "Max", "Skewness", "Kurtosis"],
@@ -264,36 +226,33 @@ with col2:
             f"{data_clean['returns'].kurtosis():.4f}"
         ]
     })
-    st.dataframe(stats_df, hide_index=True, width='stretch')
+    st.dataframe(stats_df, hide_index=True, use_container_width=True)
 
 # --- GARCH MODEL SUMMARY ---
 if model_fitted:
     st.subheader("📋 GARCH Model Summary")
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.write("**Model Parameters**")
-        # Extract parameter names and values in a clean way
-        params_data = {
+        params_df = pd.DataFrame({
             "Parameter": list(results.params.index),
             "Value": [f"{v:.6f}" for v in results.params.values],
             "Std Error": [f"{v:.6f}" for v in results.std_err.values],
             "T-Stat": [f"{v:.4f}" for v in results.tvalues.values],
             "P-Value": [f"{v:.4f}" for v in results.pvalues.values]
-        }
-        params_df = pd.DataFrame(params_data)
-        st.dataframe(params_df, hide_index=True, width='stretch')
-    
+        })
+        st.dataframe(params_df, hide_index=True, use_container_width=True)
+
     with col2:
-        st.write("**Forecast**")
+        st.write("**Volatility Forecast**")
         forecast_df = pd.DataFrame({
             "Day": list(range(1, forecast_horizon + 1)),
             "Forecasted Volatility (%)": [f"{v:.4f}" for v in forecast_volatility]
         })
-        st.dataframe(forecast_df, hide_index=True, width='stretch')
-    
-    # Additional model diagnostics
+        st.dataframe(forecast_df, hide_index=True, use_container_width=True)
+
     st.write("**Model Diagnostics**")
     diag_df = pd.DataFrame({
         "Metric": ["Log Likelihood", "AIC", "BIC", "Observations"],
@@ -304,12 +263,12 @@ if model_fitted:
             f"{len(data_clean)}"
         ]
     })
-    st.dataframe(diag_df, hide_index=True, width='stretch')
+    st.dataframe(diag_df, hide_index=True, use_container_width=True)
 
 # --- FOOTER ---
 st.divider()
-st.markdown("""
-**Data Source:** Yahoo Finance | **Model:** GARCH(p,q) | **Period:** 1990-2026 (BSE Sensex)
+st.markdown(f"""
+**Data Source:** Yahoo Finance via `yfinance` | **Model:** GARCH({garch_p},{garch_q}) | **Period:** {start_date} to {end_date}
 
 *Disclaimer: This dashboard is for educational purposes only. Historical volatility does not guarantee future results.*
 """)
