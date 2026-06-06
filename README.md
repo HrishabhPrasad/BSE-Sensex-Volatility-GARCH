@@ -53,10 +53,11 @@ MySQL must be running with a `bse_indices` database loaded from `BSE Indices.xls
 
 ## Streamlit Dashboard
 
-Built an interactive dashboard the following day — select any of the 30 major BSE stocks, configure GARCH(p,q) parameters, and view live volatility forecasts and VaR estimates.
+Built an interactive dashboard the following day — select any of the 30 major BSE stocks, configure GARCH(p,q) parameters, and view live volatility
+forecasts and VaR estimates.
 
 ```bash
 streamlit run streamlit_dashboard.py
 ```
 
-> **Live App:** [Link Coming Soon]
+> **Live App:** https://ibjdhifvu4rovhojesjpgj.streamlit.app/
