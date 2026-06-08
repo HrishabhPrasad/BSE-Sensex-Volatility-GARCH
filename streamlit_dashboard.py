@@ -69,15 +69,16 @@ selected_stock_name = st.sidebar.selectbox(
 ticker_symbol = BSE_TOP_30[selected_stock_name]
 
 st.sidebar.subheader("📅 Date Range")
+yesterday = datetime.now() - timedelta(days=1)
 start_date = st.sidebar.date_input(
     "Start Date:",
     value=datetime.now() - timedelta(days=365 * 3),
-    max_value=datetime.now()
+    max_value=yesterday
 )
 end_date = st.sidebar.date_input(
     "End Date:",
-    value=datetime.now(),
-    max_value=datetime.now()
+    value=yesterday,
+    max_value=yesterday
 )
 
 st.sidebar.subheader("📊 GARCH Model Parameters")
@@ -86,27 +87,36 @@ garch_q = st.sidebar.slider("GARCH q (order):", min_value=1, max_value=3, value=
 forecast_horizon = st.sidebar.slider("Forecast Horizon (days):", min_value=1, max_value=30, value=5)
 rolling_window = st.sidebar.slider("Rolling Window (days) for Historical Vol:", min_value=5, max_value=100, value=20)
 
-# --- DATA LOADING (cached to avoid re-downloading on every slider change) ---
-@st.cache_data(ttl=3600)
+# --- DATA LOADING ---
+# Raises on empty so failed fetches are never cached — forces a fresh attempt next run.
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_data(ticker, start, end):
-    data = yf.download(ticker, start=start, end=end, progress=False)
+    data = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+    # Flatten MultiIndex columns returned by newer yfinance versions
     if isinstance(data.columns, pd.MultiIndex):
-        data = data.xs(ticker, axis=1, level=1)
-    return data
+        data.columns = data.columns.get_level_values(0)
+    if len(data) == 0:
+        raise ValueError("empty")
+    return data[['Close']].dropna()
 
 status = st.sidebar.empty()
 status.info("⏳ Fetching data...")
 
+if st.sidebar.button("🔄 Refresh Data"):
+    load_data.clear()
+
 try:
     data = load_data(ticker_symbol, start_date, end_date)
-
-    if len(data) == 0:
-        st.error(f"❌ No data available for {selected_stock_name}. Try a different stock or date range.")
-        st.stop()
-
-    data = data[['Close']].dropna()
     data.columns = ['close_price']
     status.success(f"✅ Loaded {len(data)} trading days")
+
+except ValueError:
+    st.error(
+        f"❌ Yahoo Finance returned no data for **{selected_stock_name}** "
+        f"({start_date} → {end_date}). "
+        f"This is usually a temporary Yahoo Finance issue — click **🔄 Refresh Data** in the sidebar to retry."
+    )
+    st.stop()
 
 except Exception as e:
     st.error(f"❌ Error loading data: {str(e)}")
