@@ -60,4 +60,4 @@ forecasts and VaR estimates.
 streamlit run streamlit_dashboard.py
 ```
 
-> **Live App:** https://ibjdhifvu4rovhojesjpgj.streamlit.app/
+> **Live App:** https://bse-volatility.streamlit.app/
